@@ -19,6 +19,7 @@ declare -a FANSTATUSRPM #for individual RPM values
 declare -a FANSTATUS #for actual fan status, ok or not okay
 declare -a SNMPTABLENAME #snmptable return for name
 declare -a FANSTATUSNAME #for indvidual names
+declare -a FANSTATUSRESULTS #use an array for this, makes for neater output
 
 #set up array start for FANSTATUSRPM
 declare -i index
@@ -28,20 +29,32 @@ index=0
 declare -i nameindex
 nameindex=0
 
-#set up final output var
-
-FANSTATUSRESULTS=""
-
 #parse options
-while getopts "H:c:" option
+while getopts "H:c:h:" option
      do
           case "${option}" in
 
           H) HOSTNAME=$OPTARG;;
 
           c) COMMUNITY=$OPTARG;;
+          
+          h) echo "Usage - palofanstatus.sh -H <hostname> -c <SNMP v2c Community string> BOTH flags are required" >&2
+          exit 1
+          ;;
 
-          :) echo "Usage - palofanstatus.sh -H <hostname> -c <SNMP v2c Community string> BOTH flags are required" >&2
+          \?) echo "Invalid option: -$OPTARG Usage - palofanstatus.sh -H <hostname> -c <SNMP v2c Community string> BOTH flags are required" >&2
+          exit 1
+          ;;
+
+          ?) echo "Invalid option: -$OPTARG Usage - palofanstatus.sh -H <hostname> -c <SNMP v2c Community string> BOTH flags are required" >&2
+          exit 1
+          ;;
+
+          :) echo "Option -$OPTARG requires a parameter. Usage - palofanstatus.sh -H <hostname> -c <SNMP v2c Community string> BOTH flags are required" >&2
+          exit 1
+          ;;
+
+          *) echo "Invalid option: -$OPTARG Usage - palofanstatus.sh -H <hostname> -c <SNMP v2c Community string> BOTH flags are required" >&2
           exit 1
           ;;
 
@@ -84,9 +97,44 @@ done
 
 #build FANSTATUSRESULTS
 for i in "${!FANSTATUSRPM[@]}"; do
-     FANSTATUSRESULTS+="${FANSTATUSNAME[i]}: ${FANSTATUSRPM[i]}, ${FANSTATUS[i]}\n"
-
+      FANSTATUSRESULTS[i]="${FANSTATUSNAME[i]}: ${FANSTATUSRPM[i]}, ${FANSTATUS[i]};"
 done
 
-#and here's our output
-echo -e "${FANSTATUSRESULTS}"
+#build the data output string for nagios
+
+FANSTATUSOUTPUT="" #initialize this
+
+#and here's our output, built the nagios way
+for i in "${FANSTATUSRESULTS[@]}"; do
+     FANSTATUSOUTPUT+=$i"\n"
+done
+
+#remove trailing \n by yanking last two characters. 
+FANSTATUSOUTPUT=${FANSTATUSOUTPUT%??}
+
+#glom pipe char onto end of FANSTATUSOUTPUT, needed to separate human output from service perf data
+
+FANSTATUSOUTPUT+="|"
+#echo -e $FANSTATUSOUTPUT
+
+fsresultsindex=1 #this is a numerical label to match how the fans are counted in the palos
+
+#build perfdata string
+
+FANSTATUSPERFDATA=""
+for i in "${FANSTATUSRPM[@]}"; do
+     FANSTATUSPERFDATA+="'Fan $fsresultsindex'="$i" "
+    ((fsresultsindex++))
+done
+
+#trim trailing space from FANSTATUSPERFDATA
+FANSTATUSPERFDATA=${FANSTATUSPERFDATA%?}
+
+#build final output string
+FANSTATUSOUTPUT+=$FANSTATUSPERFDATA
+
+#output the fan data with perfdata
+echo -e $FANSTATUSOUTPUT
+
+#we're ALWAYS FINE, even when we aren't. One day, I'll get clever here. Don't hold your breath.
+exit 0
